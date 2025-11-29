@@ -1133,11 +1133,11 @@ func TestGetHydrateToSource_DifferentRepo(t *testing.T) {
 				TargetBranch: "hydrated",
 				Path:         "app",
 			},
-			HydrateTo: &v1alpha1.HydrateTo{
-				RepoURL:       "https://example.com/hydrated-repo",
-				TargetBranch:  "staging",
-				Path:          "hydrated-app",
-			},
+		HydrateTo: &v1alpha1.HydrateTo{
+			RepoURL:      "https://example.com/hydrated-repo",
+			TargetBranch: "staging",
+			Path:         "hydrated-app",
+		},
 		},
 	}
 
