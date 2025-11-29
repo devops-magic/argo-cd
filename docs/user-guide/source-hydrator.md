@@ -171,6 +171,52 @@ Argo CD will only push changes to the `hydrateTo` branch, it will not create a P
 changes to the `syncSource` branch. You will need to use your own tooling to move the changes from the `hydrateTo` 
 branch to the `syncSource` branch.
 
+## Hydrating to a Different Repository
+
+The source hydrator supports hydrating manifests to a separate repository, not just a different branch in the same repository. This allows you to keep your dry source repository clean and push rendered manifests to dedicated GitOps repositories.
+
+To hydrate to a different repository, set the `repoURL` field in the `hydrateTo` configuration:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+spec:
+  project: my-project
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  sourceHydrator:
+    drySource:
+      repoURL: https://github.com/org/app-configs
+      path: apps/my-app
+      targetRevision: main
+    syncSource:
+      repoURL: https://github.com/org/gitops-manifests
+      targetBranch: main
+      path: clusters/prod/my-app
+    hydrateTo:
+      repoURL: https://github.com/org/gitops-manifests
+      targetBranch: staging
+      path: clusters/prod/my-app
+```
+
+In this example:
+- The dry source is in `app-configs` repository
+- The hydrated manifests are pushed to the `staging` branch of the `gitops-manifests` repository
+- Argo CD syncs from the `main` branch of the `gitops-manifests` repository
+
+You can also specify a different path in the `hydrateTo` configuration. If `path` is not set in `hydrateTo`, it defaults to the `syncSource.path`.
+
+Similarly, you can configure `syncSource` to read from a different repository by setting its `repoURL` field. If `syncSource.repoURL` is not set, it defaults to `drySource.repoURL`.
+
+> [!NOTE]
+> When using different repositories, make sure that:
+> - All repositories are permitted in your AppProject
+> - You have write credentials configured for the destination repository (the one specified in `hydrateTo.repoURL` or `syncSource.repoURL`)
+> - You have read credentials configured for the sync source repository
+
 ## Commit Tracing
 
 It's common for CI or other tooling to push DRY manifest changes after a code change. It's important for users to be

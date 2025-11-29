@@ -531,6 +531,16 @@ func (s *Server) GetManifests(ctx context.Context, q *application.ApplicationMan
 			if q.GetRevision() != "" {
 				source.TargetRevision = q.GetRevision()
 			}
+			// When using sourceHydrator with different repos, check if the requested revision
+			// is the drySource SHA. If so, use the drySource repo instead of syncSource.
+			if a.Spec.SourceHydrator != nil {
+				drySourceSHA := a.Status.SourceHydrator.CurrentOperation.DrySHA
+				if drySourceSHA != "" && q.GetRevision() == drySourceSHA {
+					// This revision is from the drySource, use the drySource repo
+					source.RepoURL = a.Spec.SourceHydrator.DrySource.RepoURL
+					source.Path = a.Spec.SourceHydrator.DrySource.Path
+				}
+			}
 			sources = append(sources, source)
 		}
 
@@ -815,7 +825,19 @@ func (s *Server) Get(ctx context.Context, q *application.ApplicationQuery) (*v1a
 			enabledSourceTypes map[string]bool,
 		) error {
 			source := app.Spec.GetSource()
-			repo, err := s.db.GetRepository(ctx, a.Spec.GetSource().RepoURL, proj.Name)
+			repoURL := source.RepoURL
+			// When using sourceHydrator with different repos, ensure we use the correct repo URL
+			// (syncSource when set, otherwise drySource)
+			if app.Spec.SourceHydrator != nil {
+				// GetSource() already returns syncSource when configured, so repoURL should be correct
+				// But we need to ensure the source object has the correct repoURL
+				if app.Spec.SourceHydrator.SyncSource.RepoURL != "" {
+					repoURL = app.Spec.SourceHydrator.SyncSource.RepoURL
+				} else {
+					repoURL = app.Spec.SourceHydrator.DrySource.RepoURL
+				}
+			}
+			repo, err := s.db.GetRepository(ctx, repoURL, proj.Name)
 			if err != nil {
 				return fmt.Errorf("error getting repository: %w", err)
 			}
@@ -1608,7 +1630,18 @@ func (s *Server) RevisionMetadata(ctx context.Context, q *application.RevisionMe
 		return nil, fmt.Errorf("error getting app source by source index and version ID: %w", err)
 	}
 
-	repo, err := s.db.GetRepository(ctx, source.RepoURL, proj.Name)
+	// When using sourceHydrator with different repos, check if the requested revision
+	// is the drySource SHA. If so, use the drySource repo instead of syncSource.
+	repoURL := source.RepoURL
+	if a.Spec.SourceHydrator != nil {
+		drySourceSHA := a.Status.SourceHydrator.CurrentOperation.DrySHA
+		if drySourceSHA != "" && q.GetRevision() == drySourceSHA {
+			// This revision is from the drySource, use the drySource repo
+			repoURL = a.Spec.SourceHydrator.DrySource.RepoURL
+		}
+	}
+
+	repo, err := s.db.GetRepository(ctx, repoURL, proj.Name)
 	if err != nil {
 		return nil, fmt.Errorf("error getting repository by URL: %w", err)
 	}

@@ -64,6 +64,8 @@ argocd admin app generate-spec APPNAME [flags]
       --helm-version string                        Helm version
   -h, --help                                       help for generate-spec
       --hydrate-to-branch string                   The branch to hydrate the app to
+      --hydrate-to-path string                     The path in the repository to hydrate the app to (defaults to sync-source-path if not set)
+      --hydrate-to-repo string                     The repository URL to hydrate the app to (defaults to sync-source-repo or dry-source-repo if not set)
       --ignore-missing-components                  Ignore locally missing component directories when setting Kustomize components
       --ignore-missing-value-files                 Ignore locally missing valueFiles when setting helm template --values
   -i, --inline                                     If set then generated resource is written back to the file specified in --file flag
@@ -110,6 +112,7 @@ argocd admin app generate-spec APPNAME [flags]
       --sync-retry-refresh                         Indicates if the latest revision should be used on retry instead of the initial one
       --sync-source-branch string                  The branch from which the app will sync
       --sync-source-path string                    The path in the repository from which the app will sync
+      --sync-source-repo string                    The repository URL from which the app will sync (defaults to dry-source-repo if not set)
       --validate                                   Validation of repo and cluster (default true)
       --values stringArray                         Helm values file(s) to use
       --values-literal-file string                 Filename or URL to import as a literal Helm values block
