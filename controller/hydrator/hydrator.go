@@ -418,16 +418,6 @@ func (h *Hydrator) hydrate(logCtx *log.Entry, apps []*appv1.Application, project
 		return targetRevision, "", errors, fmt.Errorf("failed to get revision metadata for %q: %w", targetRevision, err)
 	}
 
-	// get the commit message template
-	commitMessageTemplate, err := h.dependencies.GetHydratorCommitMessageTemplate()
-	if err != nil {
-		return targetRevision, "", errors, fmt.Errorf("failed to get hydrated commit message template: %w", err)
-	}
-	commitMessage, errMsg := getTemplatedCommitMessage(drySourceRepoURL, targetRevision, commitMessageTemplate, revisionMetadata)
-	if errMsg != nil {
-		return targetRevision, "", errors, fmt.Errorf("failed to get hydrator commit templated message: %w", errMsg)
-	}
-
 	repo, err := h.dependencies.GetWriteCredentials(context.Background(), destinationRepoURL, project)
 	if err != nil {
 		return targetRevision, "", errors, fmt.Errorf("failed to get hydrator credentials: %w", err)
@@ -438,6 +428,15 @@ func (h *Hydrator) hydrate(logCtx *log.Entry, apps []*appv1.Application, project
 			Repo: destinationRepoURL,
 		}
 		logCtx.Warn("no credentials found for repo, continuing without credentials")
+	}
+	// get the commit message template
+	commitMessageTemplate, err := h.dependencies.GetHydratorCommitMessageTemplate()
+	if err != nil {
+		return targetRevision, "", errors, fmt.Errorf("failed to get hydrated commit message template: %w", err)
+	}
+	commitMessage, errMsg := getTemplatedCommitMessage(drySourceRepoURL, targetRevision, commitMessageTemplate, revisionMetadata)
+	if errMsg != nil {
+		return targetRevision, "", errors, fmt.Errorf("failed to get hydrator commit templated message: %w", errMsg)
 	}
 
 	manifestsRequest := commitclient.CommitHydratedManifestsRequest{
