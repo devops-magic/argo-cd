@@ -4338,6 +4338,317 @@ func Test_RevisionMetadata(t *testing.T) {
 	}
 }
 
+func Test_matchHydratorRevisionToRepoURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		drySourceRepoURL  = "https://github.com/org/dry-source"
+		syncSourceRepoURL = "https://github.com/org/sync-source"
+		drySHA            = "abc1234567890abcdef1234567890abcdef12345" // 40 chars
+		hydratedSHA       = "def1234567890abcdef1234567890abcdef12345" // 40 chars
+		unknownSHA        = "fff1234567890abcdef1234567890abcdef12345" // 40 chars
+	)
+
+	testCases := []struct {
+		name        string
+		revision    string
+		drySHA      string
+		hydratedSHA string
+		hydrator    *v1alpha1.SourceHydrator
+		expectedURL string
+		expectFound bool
+	}{
+		{
+			name:        "DrySHA match returns DrySource.RepoURL",
+			revision:    drySHA,
+			drySHA:      drySHA,
+			hydratedSHA: hydratedSHA,
+			hydrator: &v1alpha1.SourceHydrator{
+				DrySource: v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+			},
+			expectedURL: drySourceRepoURL,
+			expectFound: true,
+		},
+		{
+			name:        "HydratedSHA match with SyncSource.RepoURL returns SyncSource.RepoURL",
+			revision:    hydratedSHA,
+			drySHA:      drySHA,
+			hydratedSHA: hydratedSHA,
+			hydrator: &v1alpha1.SourceHydrator{
+				DrySource:  v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+				SyncSource: v1alpha1.SyncSource{RepoURL: syncSourceRepoURL},
+			},
+			expectedURL: syncSourceRepoURL,
+			expectFound: true,
+		},
+		{
+			name:        "HydratedSHA match without SyncSource.RepoURL returns DrySource.RepoURL",
+			revision:    hydratedSHA,
+			drySHA:      drySHA,
+			hydratedSHA: hydratedSHA,
+			hydrator: &v1alpha1.SourceHydrator{
+				DrySource:  v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+				SyncSource: v1alpha1.SyncSource{RepoURL: ""},
+			},
+			expectedURL: drySourceRepoURL,
+			expectFound: true,
+		},
+		{
+			name:        "No match returns empty and false",
+			revision:    unknownSHA,
+			drySHA:      drySHA,
+			hydratedSHA: hydratedSHA,
+			hydrator: &v1alpha1.SourceHydrator{
+				DrySource: v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+			},
+			expectedURL: "",
+			expectFound: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			url, found := matchHydratorRevisionToRepoURL(tc.revision, tc.drySHA, tc.hydratedSHA, tc.hydrator)
+			assert.Equal(t, tc.expectedURL, url)
+			assert.Equal(t, tc.expectFound, found)
+		})
+	}
+}
+
+func Test_resolveSourceHydratorRepoURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		defaultRepoURL         = "https://github.com/org/default-repo"
+		drySourceRepoURL       = "https://github.com/org/dry-source"
+		syncSourceRepoURL      = "https://github.com/org/sync-source"
+		lastSuccessDryRepoURL  = "https://github.com/org/last-dry-source"
+		lastSuccessSyncRepoURL = "https://github.com/org/last-sync-source"
+		drySHA                 = "abc1234567890abcdef1234567890abcdef12345" // 40 chars
+		hydratedSHA            = "def1234567890abcdef1234567890abcdef12345" // 40 chars
+		lastSuccessDrySHA      = "111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa111" // 40 chars
+		lastSuccessHydratedSHA = "222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb222" // 40 chars
+		unknownSHA             = "fff1234567890abcdef1234567890abcdef12345" // 40 chars
+	)
+
+	testCases := []struct {
+		name           string
+		app            *v1alpha1.Application
+		revision       string
+		defaultRepoURL string
+		expected       string
+	}{
+		{
+			name: "Non-hydrator app returns defaultRepoURL",
+			app: &v1alpha1.Application{
+				Spec: v1alpha1.ApplicationSpec{
+					SourceHydrator: nil,
+				},
+			},
+			revision:       drySHA,
+			defaultRepoURL: defaultRepoURL,
+			expected:       defaultRepoURL,
+		},
+		{
+			name: "Non-commit SHA revision returns defaultRepoURL",
+			app: &v1alpha1.Application{
+				Spec: v1alpha1.ApplicationSpec{
+					SourceHydrator: &v1alpha1.SourceHydrator{
+						DrySource: v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+					},
+				},
+				Status: v1alpha1.ApplicationStatus{
+					SourceHydrator: v1alpha1.SourceHydratorStatus{},
+				},
+			},
+			revision:       "main",
+			defaultRepoURL: defaultRepoURL,
+			expected:       defaultRepoURL,
+		},
+		{
+			name: "DrySHA match in CurrentOperation returns DrySource.RepoURL",
+			app: &v1alpha1.Application{
+				Spec: v1alpha1.ApplicationSpec{
+					SourceHydrator: &v1alpha1.SourceHydrator{},
+				},
+				Status: v1alpha1.ApplicationStatus{
+					SourceHydrator: v1alpha1.SourceHydratorStatus{
+						CurrentOperation: &v1alpha1.HydrateOperation{
+							DrySHA:      drySHA,
+							HydratedSHA: hydratedSHA,
+							SourceHydrator: v1alpha1.SourceHydrator{
+								DrySource: v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+							},
+						},
+					},
+				},
+			},
+			revision:       drySHA,
+			defaultRepoURL: defaultRepoURL,
+			expected:       drySourceRepoURL,
+		},
+		{
+			name: "HydratedSHA match with SyncSource.RepoURL returns SyncSource.RepoURL",
+			app: &v1alpha1.Application{
+				Spec: v1alpha1.ApplicationSpec{
+					SourceHydrator: &v1alpha1.SourceHydrator{},
+				},
+				Status: v1alpha1.ApplicationStatus{
+					SourceHydrator: v1alpha1.SourceHydratorStatus{
+						CurrentOperation: &v1alpha1.HydrateOperation{
+							DrySHA:      drySHA,
+							HydratedSHA: hydratedSHA,
+							SourceHydrator: v1alpha1.SourceHydrator{
+								DrySource:  v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+								SyncSource: v1alpha1.SyncSource{RepoURL: syncSourceRepoURL},
+							},
+						},
+					},
+				},
+			},
+			revision:       hydratedSHA,
+			defaultRepoURL: defaultRepoURL,
+			expected:       syncSourceRepoURL,
+		},
+		{
+			name: "HydratedSHA match without SyncSource.RepoURL returns DrySource.RepoURL",
+			app: &v1alpha1.Application{
+				Spec: v1alpha1.ApplicationSpec{
+					SourceHydrator: &v1alpha1.SourceHydrator{},
+				},
+				Status: v1alpha1.ApplicationStatus{
+					SourceHydrator: v1alpha1.SourceHydratorStatus{
+						CurrentOperation: &v1alpha1.HydrateOperation{
+							DrySHA:      drySHA,
+							HydratedSHA: hydratedSHA,
+							SourceHydrator: v1alpha1.SourceHydrator{
+								DrySource:  v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+								SyncSource: v1alpha1.SyncSource{RepoURL: ""},
+							},
+						},
+					},
+				},
+			},
+			revision:       hydratedSHA,
+			defaultRepoURL: defaultRepoURL,
+			expected:       drySourceRepoURL,
+		},
+		{
+			name: "DrySHA match in LastSuccessfulOperation only returns LastSuccessful DrySource.RepoURL",
+			app: &v1alpha1.Application{
+				Spec: v1alpha1.ApplicationSpec{
+					SourceHydrator: &v1alpha1.SourceHydrator{},
+				},
+				Status: v1alpha1.ApplicationStatus{
+					SourceHydrator: v1alpha1.SourceHydratorStatus{
+						CurrentOperation: &v1alpha1.HydrateOperation{
+							DrySHA:      drySHA,
+							HydratedSHA: hydratedSHA,
+							SourceHydrator: v1alpha1.SourceHydrator{
+								DrySource: v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+							},
+						},
+						LastSuccessfulOperation: &v1alpha1.SuccessfulHydrateOperation{
+							DrySHA:      lastSuccessDrySHA,
+							HydratedSHA: lastSuccessHydratedSHA,
+							SourceHydrator: v1alpha1.SourceHydrator{
+								DrySource: v1alpha1.DrySource{RepoURL: lastSuccessDryRepoURL},
+							},
+						},
+					},
+				},
+			},
+			revision:       lastSuccessDrySHA,
+			defaultRepoURL: defaultRepoURL,
+			expected:       lastSuccessDryRepoURL,
+		},
+		{
+			name: "HydratedSHA match in LastSuccessfulOperation with SyncSource.RepoURL returns SyncSource.RepoURL",
+			app: &v1alpha1.Application{
+				Spec: v1alpha1.ApplicationSpec{
+					SourceHydrator: &v1alpha1.SourceHydrator{},
+				},
+				Status: v1alpha1.ApplicationStatus{
+					SourceHydrator: v1alpha1.SourceHydratorStatus{
+						CurrentOperation: nil,
+						LastSuccessfulOperation: &v1alpha1.SuccessfulHydrateOperation{
+							DrySHA:      lastSuccessDrySHA,
+							HydratedSHA: lastSuccessHydratedSHA,
+							SourceHydrator: v1alpha1.SourceHydrator{
+								DrySource:  v1alpha1.DrySource{RepoURL: lastSuccessDryRepoURL},
+								SyncSource: v1alpha1.SyncSource{RepoURL: lastSuccessSyncRepoURL},
+							},
+						},
+					},
+				},
+			},
+			revision:       lastSuccessHydratedSHA,
+			defaultRepoURL: defaultRepoURL,
+			expected:       lastSuccessSyncRepoURL,
+		},
+		{
+			name: "No match anywhere returns defaultRepoURL",
+			app: &v1alpha1.Application{
+				Spec: v1alpha1.ApplicationSpec{
+					SourceHydrator: &v1alpha1.SourceHydrator{},
+				},
+				Status: v1alpha1.ApplicationStatus{
+					SourceHydrator: v1alpha1.SourceHydratorStatus{
+						CurrentOperation: &v1alpha1.HydrateOperation{
+							DrySHA:      drySHA,
+							HydratedSHA: hydratedSHA,
+							SourceHydrator: v1alpha1.SourceHydrator{
+								DrySource: v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+							},
+						},
+					},
+				},
+			},
+			revision:       unknownSHA,
+			defaultRepoURL: defaultRepoURL,
+			expected:       defaultRepoURL,
+		},
+		{
+			name: "CurrentOperation takes priority over LastSuccessfulOperation",
+			app: &v1alpha1.Application{
+				Spec: v1alpha1.ApplicationSpec{
+					SourceHydrator: &v1alpha1.SourceHydrator{},
+				},
+				Status: v1alpha1.ApplicationStatus{
+					SourceHydrator: v1alpha1.SourceHydratorStatus{
+						CurrentOperation: &v1alpha1.HydrateOperation{
+							DrySHA:      drySHA,
+							HydratedSHA: hydratedSHA,
+							SourceHydrator: v1alpha1.SourceHydrator{
+								DrySource: v1alpha1.DrySource{RepoURL: drySourceRepoURL},
+							},
+						},
+						LastSuccessfulOperation: &v1alpha1.SuccessfulHydrateOperation{
+							DrySHA:      drySHA, // Same SHA in both operations
+							HydratedSHA: hydratedSHA,
+							SourceHydrator: v1alpha1.SourceHydrator{
+								DrySource: v1alpha1.DrySource{RepoURL: lastSuccessDryRepoURL},
+							},
+						},
+					},
+				},
+			},
+			revision:       drySHA,
+			defaultRepoURL: defaultRepoURL,
+			expected:       drySourceRepoURL, // Should return CurrentOperation's URL, not LastSuccessful's
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := resolveSourceHydratorRepoURL(tc.app, tc.revision, tc.defaultRepoURL)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
 func Test_DeepCopyInformers(t *testing.T) {
 	t.Parallel()
 
