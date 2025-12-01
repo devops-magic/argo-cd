@@ -242,12 +242,15 @@ export interface DrySource {
 }
 
 export interface SyncSource {
+    repoURL?: string;
     targetBranch: string;
     path: string;
 }
 
 export interface HydrateTo {
+    repoURL?: string;
     targetBranch: string;
+    path?: string;
 }
 
 export interface ApplicationSourceHelm {
